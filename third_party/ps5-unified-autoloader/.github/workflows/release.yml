@@ -1,0 +1,51 @@
+name: release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: get_version
+        run: |
+          VERSION=$(grep '#define AUTOLOADER_VERSION' include/autoloader.h | awk '{print $3}' | tr -d '"' | tr -d '\r')
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Get short commit SHA
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build via Docker
+        run: bash ./build_release.sh
+
+      - name: Fix permissions for build artifacts
+        run: sudo chown -R $USER:$USER .
+
+      - name: Rename binary with version and short SHA
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          SHA="${{ steps.vars.outputs.sha_short }}"
+          mv autoloader_v*.elf ps5-unified-autoloader-v${VERSION}-${SHA}.elf
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}-${{ steps.vars.outputs.sha_short }}
+          name: Release v${{ steps.get_version.outputs.version }}-${{ steps.vars.outputs.sha_short }}
+          files: ps5-unified-autoloader-v${{ steps.get_version.outputs.version }}-${{ steps.vars.outputs.sha_short }}.elf
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

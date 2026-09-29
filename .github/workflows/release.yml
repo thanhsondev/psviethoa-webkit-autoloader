@@ -1,0 +1,34 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: PSVietHoa Webkit AutoLoader ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            Offline WebKit autoloader for PS5 - **Relapse** chain (FW 7.00-13.60) + **umtx2** (FW 1.00-5.50).
+
+            Fork of [ps5-webkit-autoloader](https://github.com/itsPLK/ps5-webkit-autoloader) by itsPLK (GPL-3.0).
+            See the README for setup instructions and full credits.
+
+            **Files:**
+            - `psviethoa-webkit-autoloader-installer_v*.elf` - installer payload (send with elfldr / Payload Manager)
+            - `psviethoa-webkit-autoloader-host*.py` - PC host for the first-time install when not jailbroken
+          files: |
+            psviethoa-webkit-autoloader-installer_v*.elf
+            psviethoa-webkit-autoloader-host*.py

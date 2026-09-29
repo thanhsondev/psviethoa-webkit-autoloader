@@ -1,0 +1,50 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 12)'
+        required: true
+        default: '1'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get short commit SHA
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build via Docker
+        run: bash ./build.sh
+
+      - name: Fix permissions for build artifacts
+        run: sudo chown -R $USER:$USER .
+
+      - name: Rename binary with version and short SHA
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          SHA="${{ steps.vars.outputs.sha_short }}"
+          mv elfldr-ps5.elf elfldr-ps5-v${VERSION}-${SHA}.elf
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}-${{ steps.vars.outputs.sha_short }}
+          name: Release v${{ github.event.inputs.version }}-${{ steps.vars.outputs.sha_short }}
+          files: elfldr-ps5-v${{ github.event.inputs.version }}-${{ steps.vars.outputs.sha_short }}.elf
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

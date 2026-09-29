@@ -1,0 +1,47 @@
+# Dockerfile to build the ps5-unified-autoloader SDK environment
+#
+# NOTE: This image is intentionally lean — it only installs the ps5-payload-sdk
+# (clang + libc stubs). It does NOT build libmicrohttpd / mbedTLS / libcurl
+# because autoloader.elf only requires standard PS5 system libraries.
+#
+# pldmgr.elf (which DOES need those heavy deps) is built separately using
+# pldmgr's own Docker image (ps5-payload-sdk-pldmgr) and copied into the
+# working directory before running this container.
+
+FROM ubuntu:24.04
+
+# Install build dependencies
+# clang-18 and lld-18 are required by the PS5 payload SDK
+RUN apt-get update && apt-get install -y \
+    git \
+    cmake \
+    ninja-build \
+    clang-18 \
+    lld-18 \
+    make \
+    python3 \
+    python3-pyelftools \
+    wget \
+    xz-utils \
+    xxd \
+    pkg-config \
+    sudo \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up clang-18 as the default clang
+RUN ln -s /usr/bin/clang-18    /usr/bin/clang && \
+    ln -s /usr/bin/clang++-18  /usr/bin/clang++ && \
+    ln -s /usr/bin/ld.lld-18   /usr/bin/ld.lld
+
+# Clone and install the PS5 payload SDK
+WORKDIR /opt
+RUN git clone https://github.com/ps5-payload-dev/sdk.git ps5-payload-sdk-source
+
+WORKDIR /opt/ps5-payload-sdk-source
+RUN make DESTDIR=/opt/ps5-payload-sdk install
+
+# Set SDK environment variable for Makefile
+ENV PS5_PAYLOAD_SDK=/opt/ps5-payload-sdk
+
+WORKDIR /src

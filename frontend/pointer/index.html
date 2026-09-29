@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PSVietHoa AutoLoader</title>
+  <style>
+    * { margin: 0; padding: 0; -webkit-box-sizing: border-box; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background: #05070e;
+      background: -webkit-linear-gradient(180deg, #05070e 0%, #0a101f 100%);
+      background: linear-gradient(180deg, #05070e 0%, #0a101f 100%);
+      color: #eaf0ff;
+      display: -webkit-box; display: -webkit-flex; display: flex;
+      -webkit-box-align: center; -webkit-align-items: center; align-items: center;
+      -webkit-box-pack: center; -webkit-justify-content: center; justify-content: center;
+      min-height: 100%; text-align: center;
+    }
+    .wrap { padding: 2rem; }
+    .ring {
+      width: 44px; height: 44px; margin: 0 auto 18px; border-radius: 50%;
+      border: 3px solid rgba(84, 110, 255, 0.18); border-top-color: #5d7bff;
+      -webkit-animation: spin 1s linear infinite; animation: spin 1s linear infinite;
+    }
+    @-webkit-keyframes spin { to { -webkit-transform: rotate(360deg); transform: rotate(360deg); } }
+    @keyframes spin { to { -webkit-transform: rotate(360deg); transform: rotate(360deg); } }
+    p { font-size: 1.05rem; color: #98a6c8; }
+    p.bad { color: #ff7a7a; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="ring" id="ring"></div>
+    <p id="status">Loading...</p>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var dir = '[[APP_DIR_PLACEHOLDER]]';
+      var version = '[[VERSION_PLACEHOLDER]]';
+      var statusEl = document.getElementById('status');
+
+      function fail() {
+        statusEl.textContent = 'Cache incomplete - run the installer again.';
+        statusEl.className = 'bad';
+        document.getElementById('ring').style.display = 'none';
+      }
+
+      /* __complete__ is the LAST entry of the AppCache manifest, so if it is
+         present (with our version content) every file before it was downloaded.
+         Only then point at the app. If the marker is missing, this fetch falls
+         back to this very page (content mismatch) or errors - never redirect
+         into a partially cached directory. */
+      fetch('/app/' + dir + '/__complete__')
+        .then(function (r) {
+          return r.text();
+        })
+        .then(function (t) {
+          if (t.trim() === version) {
+            window.location.replace('/app/' + dir + '/index.html');
+          } else {
+            fail();
+          }
+        })
+        .catch(fail);
+    })();
+  </script>
+</body>
+
+</html>

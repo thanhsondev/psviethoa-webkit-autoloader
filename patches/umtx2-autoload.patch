@@ -1,0 +1,118 @@
+diff --git a/index.html b/index.html
+index 3ee132b..bcf6355 100644
+--- a/index.html
++++ b/index.html
+@@ -84,7 +84,7 @@
+             throw reason;
+         });
+         document.getElementById("current-fw").innerHTML = fw_str;
+-        registerAppCacheEventHandlers();
++        // registerAppCacheEventHandlers(); // WKAL: redundant, autoloader manages cache
+         registerL2ButtonHandler();
+         window.onload = function () {
+             let autoload = sessionStorage.getItem(SESSIONSTORE_ON_LOAD_AUTORUN_KEY);
+diff --git a/main.js b/main.js
+index 9cbb675..fc07bce 100644
+--- a/main.js
++++ b/main.js
+@@ -500,24 +500,21 @@ async function main(userlandRW, wkOnly = false) {
+     let is_elfldr_running = await probe_sb_elfldr();
+     await log("is elfldr running: " + is_elfldr_running, LogLevel.INFO);
+     if (wkOnly && !is_elfldr_running) {
+-        let res = confirm("elfldr doesnt seem to be running and in webkit only mode it wont be loaded, continue?");
+-        if (!res) {
+-            throw new Error("Aborted");
+-        }
++        // WKAL: no interaction in the autoloader; elfldr is loaded below.
++        await log("elfldr is not running yet (webkit-only mode)", LogLevel.INFO);
+     }
+ 
+     if (!wkOnly && is_elfldr_running) {
+-        let res = confirm("elfldr seems to be running, would you like to skip the kernel exploit, and switch to sender-only mode?");
+-        if (res) {
+-            wkOnly = true;
+-        }
++        // WKAL: always run the full chain in the autoloader, never skip it.
++        await log("elfldr is already running, continuing with the full chain", LogLevel.INFO);
+     }
+ 
+     populatePayloadsPage(wkOnly);
+ 
+-    var load_payload_into_elf_store_from_local_file = async function (filename) {
++    var load_payload_into_elf_store_from_local_file = async function (filename, base) {
++        base = base || 'payloads/';
+         await log("Loading ELF file: " + filename + " ...", LogLevel.LOG);
+-        const response = await fetch('payloads/' + filename);
++        const response = await fetch(base + filename);
+         if (!response.ok) {
+             throw new Error(`Failed to fetch the binary file. Status: ${response.status}`);
+         }
+@@ -849,9 +846,9 @@ async function main(userlandRW, wkOnly = false) {
+             return res;
+         }
+ 
+-        var load_local_elf = async function (filename) {
++        var load_local_elf = async function (filename, base) {
+             try {
+-                let total_sz = await load_payload_into_elf_store_from_local_file(filename);
++                let total_sz = await load_payload_into_elf_store_from_local_file(filename, base);
+                 await parse_elf_store(total_sz);
+                 await execute_elf_store();
+                 return await wait_for_elf_to_exit();
+@@ -1182,6 +1179,27 @@ async function main(userlandRW, wkOnly = false) {
+     await new Promise(resolve => setTimeout(resolve, 300));
+     await switchPage("payloads-view");
+ 
++    // WKAL autoload: if the page was opened with ?autoload=<name>, wait 4 s for
++    // elfldr to bind port 9021, then dispatch a synthetic payload request through
++    // the main loop — exactly as if the user pressed the corresponding button.
++    var wkalAutoloadName = new URLSearchParams(location.search).get("autoload") || sessionStorage.getItem("wkal_autoload");
++    if (wkalAutoloadName && is_elfldr_running) {
++        await log("autoload: waiting 4 s for elfldr to bind 9021...", LogLevel.LOG);
++        setTimeout(function () {
++            window.dispatchEvent(new CustomEvent(MAINLOOP_EXECUTE_PAYLOAD_REQUEST, {
++                detail: {
++                    displayTitle: "Autoload",
++                    fileName: wkalAutoloadName,
++                    wkalBase: "../payloads/",
++                    toPort: 9021,
++                    wkalAutoload: true
++                }
++            }));
++        }, 4000);
++    } else if (wkalAutoloadName && !is_elfldr_running) {
++        await log("autoload failed: elfldr did not load", LogLevel.ERROR);
++        try { window.parent.postMessage({ type: "wkal", kind: "autoload", ok: false, why: "elfldr did not load" }, "*"); } catch (e) { }
++    }
+ 
+     while (true) {
+ 
+@@ -1198,7 +1216,7 @@ async function main(userlandRW, wkOnly = false) {
+                     }
+                 } else {
+                     updateToastMessage(toast, `${payload_info.displayTitle}: Fetching...`);
+-                    let total_sz = await load_payload_into_elf_store_from_local_file(payload_info.fileName);
++                    let total_sz = await load_payload_into_elf_store_from_local_file(payload_info.fileName, payload_info.wkalBase);
+ 
+                     if (!payload_info.toPort) {
+                         if (wkOnly) {
+@@ -1220,11 +1238,19 @@ async function main(userlandRW, wkOnly = false) {
+                         updateToastMessage(toast, `${payload_info.displayTitle}: Sending to port ${payload_info.toPort}...`);
+                         await send_buffer_to_port(elf_store, total_sz, payload_info.toPort);
+                         updateToastMessage(toast, `${payload_info.displayTitle}: Sent to port ${payload_info.toPort}`);
++                        // WKAL autoload result
++                        if (payload_info.wkalAutoload) {
++                            try { window.parent.postMessage({ type: "wkal", kind: "autoload", ok: true, bytes: total_sz }, "*"); } catch (e) { }
++                        }
+                     }
+                 }
+ 
+             } catch (error) {
+                 updateToastMessage(toast, `${payload_info.displayTitle}: Error: ${error}`);
++                // WKAL autoload result
++                if (payload_info.wkalAutoload) {
++                    try { window.parent.postMessage({ type: "wkal", kind: "autoload", ok: false, why: String(error && error.message ? error.message : error) }, "*"); } catch (e) { }
++                }
+                 setTimeout(removeToast, TOAST_ERROR_TIMEOUT, toast);
+                 continue;
+             }

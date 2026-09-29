@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <title>PSVietHoa AutoLoader v[[VERSION_PLACEHOLDER]] (built [[BUILD_TIME_PLACEHOLDER]])</title>
+</head>
+
+<body>
+  <div id="splash" aria-hidden="false">
+    <div class="splash-inner">
+      <div class="logo-wrap">
+        <div class="logo-glow" aria-hidden="true"></div>
+        <img class="logo" src="logo.svg" alt="PSVietHoa AutoLoader" />
+      </div>
+      <h1 class="splash-title">PSVietHoa <span>AutoLoader</span></h1>
+      <p class="splash-sub">Jailbreak &amp; payload autoloader for PS5</p>
+      <div class="splash-loader" aria-hidden="true">
+        <div class="splash-loader-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <iframe id="exploit" title="exploit" hidden></iframe>
+
+  <main id="loader" hidden>
+    <header id="topbar">
+      <div class="tb-left">
+        <img class="tb-logo" src="logo.svg" alt="" />
+        <div class="tb-name">PSVietHoa <span>AutoLoader</span></div>
+      </div>
+      <div class="tb-right">
+        <span class="badge" id="fwBadge">FW --</span>
+        <span class="badge badge-chain" id="chainBadge">--</span>
+        <span class="badge badge-status" id="statusBadge"><span class="badge-dot"></span><span id="statusText">idle</span></span>
+      </div>
+    </header>
+
+    <div id="stages" aria-label="Exploit stages">
+      <div class="stage" data-stage="webkit">
+        <div class="stage-top"><span class="stage-dot"></span><span class="stage-label">WebKit</span></div>
+        <div class="stage-sub">JSC · ARW</div>
+      </div>
+      <div class="stage" data-stage="rop">
+        <div class="stage-top"><span class="stage-dot"></span><span class="stage-label">ROP Chain</span></div>
+        <div class="stage-sub">worker sandbox</div>
+      </div>
+      <div class="stage" data-stage="kernel">
+        <div class="stage-top"><span class="stage-dot"></span><span class="stage-label">Kernel</span></div>
+        <div class="stage-sub">kernel r/w · root</div>
+      </div>
+      <div class="stage" data-stage="payloads">
+        <div class="stage-top"><span class="stage-dot"></span><span class="stage-label">Payloads</span></div>
+        <div class="stage-sub">elfldr · port 9021</div>
+      </div>
+    </div>
+
+    <section id="consoleWrap">
+      <div id="consoleHead">
+        <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+        <span class="console-title">console</span>
+      </div>
+      <div id="logWrapper">
+        <div id="logContainer"></div>
+      </div>
+    </section>
+
+    <section id="progressContainer">
+      <div id="progressTrack">
+        <div id="progressBar"></div>
+      </div>
+      <div id="progressRow">
+        <div id="progressLabel">Waiting to start...</div>
+        <div id="progressPct">0%</div>
+      </div>
+    </section>
+  </main>
+
+  <footer id="footer">PSVietHoa AutoLoader v[[VERSION_PLACEHOLDER]] — psviethoa.com<br />Based on ps5-webkit-autoloader by itsPLK (GPL-3.0)</footer>
+
+  <script src="app.js"></script>
+</body>
+
+</html>

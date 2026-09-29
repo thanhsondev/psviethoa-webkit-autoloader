@@ -1,0 +1,17 @@
+# Build outputs
+*.elf
+*.o
+*.c.bak
+
+# Generated asset headers / xxd output
+*_elf.c
+
+# Docker temp files
+.docker/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+*.swp

@@ -1,0 +1,395 @@
+diff --git a/src/kexp.js b/src/kexp.js
+index c1673559dd6249889131c97576c8abb7bec01053..31bdafe658015f73cc5dfff95963ac1a954cb817 100644
+--- a/src/kexp.js
++++ b/src/kexp.js
+@@ -98,16 +98,16 @@ function resolveSymbols(p) {
+   return resolved;
+ }
+ 
+-async function fetchBinary(name) {
+-  const response = await fetch("payloads/" + name);
++async function fetchBinary(name, basePath = "payloads/") {
++  const response = await fetch(basePath + name);
+   if (!response.ok) throw new Error("kexp: " + name + " returned HTTP " + response.status);
+   return new Uint8Array(await response.arrayBuffer());
+ }
+ 
+ const COPY_SLICE = 0x40000;
+ 
+-async function mapElf(name, p, chain) {
+-  const elf = await fetchBinary(name);
++async function mapElf(name, p, chain, basePath = "payloads/", onProgress) {
++  const elf = await fetchBinary(name, basePath);
+   if (elf.length < 0x1000 || readU32(elf, 0) !== 0x464c457f)
+     throw new Error("kexp: " + name + " is not an ELF");
+ 
+@@ -118,11 +118,19 @@ async function mapElf(name, p, chain) {
+ 
+   const dwords = elf.length & ~3;
+   let offset = 0;
+-  let sliceEnd;
++  let nextMark = 25;
++  let sliceEnd, percent;
+   while (offset < dwords) {
+     sliceEnd = Math.min(offset + COPY_SLICE, dwords);
+     for (; offset < sliceEnd; offset += 4)
+       p.write4(base.add32(offset), readU32(elf, offset));
++    if (onProgress) {
++      percent = Math.floor((offset / elf.length) * 100);
++      if (percent >= nextMark) {
++        onProgress(Math.min(100, percent));
++        nextMark += 25;
++      }
++    }
+     if (offset < dwords)
+       await new Promise((resolve) => setTimeout(resolve, 0));
+   }
+@@ -183,6 +191,21 @@ export async function loadOptionalPayloads(p, chain, log) {
+   log("etaHEN.elf sent");
+ }
+ 
++// WKAL: fetch ?autoload=<name> from the autoloader's shared payloads dir
++// (/app/<version>/payloads/, one level up from this page), map it into
++// kernel memory and push it through the running elfldr. Same transport as
++// the optional payloads above, but the file comes from the autoloader
++// instead of the relapse-bundled payloads dir. Returns bytes sent.
++export async function loadAutoloadPayload(p, chain, name, log) {
++  const say = typeof log === "function" ? log : () => {};
++  say("fetching " + name);
++  const payload = await mapElf(name, p, chain, "../payloads/",
++    (percent) => say("copying " + name + " " + percent + "%"));
++  say("sending " + name + " to elfldr");
++  await sendElf(name, payload, p, chain);
++  return payload.size;
++}
++
+ function patchShellcode(blob, symbols) {
+   if (blob.length !== SHELLCODE.size)
+     throw new Error("kexp: expected " + SHELLCODE.size + " bytes, got " + blob.length);
+diff --git a/src/main.js b/src/main.js
+index 991746764608b341a8cec1bb8fdd434715b7433b..ed930cee9589ae81d0c9b704838113463532f8e2 100644
+--- a/src/main.js
++++ b/src/main.js
+@@ -1,7 +1,8 @@
+ function countFingerprints(p, stack, expected) {
+   let count = 0;
++  let v;
+   for (let offset = 0x7f000; offset < 0x80000; offset += 0x8) {
+-    const v = p.read8(stack.add32(offset));
++    v = p.read8(stack.add32(offset));
+     if (v.low === expected.low && v.hi === expected.hi) count++;
+   }
+   return count;
+@@ -18,29 +19,35 @@ async function findWorkerStack(p, libKernelBase) {
+   const head = libKernelBase.add32(OFFSET_lk__thread_list);
+ 
+   // Collect every plausibility-gated 0x80000 stack.
++  // NOTE (PS5 quirk): loop-body bindings are hoisted to plain let assignments
++  // on purpose. Some firmwares' JavaScriptCore throws "Cannot declare a
++  // const variable twice" when a loop body with lexical declarations is
++  // re-entered.
+   const stacks = [];
+   let steps = 0;
++  let next, stack, stacksz;
+   for (
+     let thread = p.read8(head);
+     thread.low != 0x0 && thread.hi != 0x0 && steps++ < 512;
++    thread = next
+   ) {
+     if (!plausible(thread)) break;
+ 
+-    const next = p.read8(thread.add32(PTHREAD_NEXT_THREAD_OFFSET));
+-    const stack = p.read8(thread.add32(PTHREAD_STACK_ADDR_OFFSET));
+-    const stacksz = p.read8(thread.add32(PTHREAD_STACK_SIZE_OFFSET));
++    next = p.read8(thread.add32(PTHREAD_NEXT_THREAD_OFFSET));
++    stack = p.read8(thread.add32(PTHREAD_STACK_ADDR_OFFSET));
++    stacksz = p.read8(thread.add32(PTHREAD_STACK_SIZE_OFFSET));
+     if (stacksz.hi === 0 && stacksz.low === 0x80000 && plausible(stack))
+       stacks.push(stack);
+-    thread = next;
+   }
+   if (stacks.length === 0)
+     throw new Error(`failed to find worker. (libkernel thread_list @ 0x${head.toString()}; scanned ${steps} thread nodes)`);
+ 
+   // fingerprint-select. The rop_slave thread parks in the libkernel
+   const expected = libKernelBase.add32(OFFSET_lk_worker_wait_return);
++  let hits;
+   for (let attempt = 0; attempt < 50; attempt++) {
+-    const hits = stacks.filter((stack) =>
+-      countFingerprints(p, stack, expected) > 0,
++    hits = stacks.filter((candidate) =>
++      countFingerprints(p, candidate, expected) > 0,
+     );
+     if (hits.length === 1) return hits[0];
+     if (hits.length === 0) {
+@@ -55,13 +62,14 @@ async function findWorkerStack(p, libKernelBase) {
+ async function findWorkerReturnSlot(p, stack, libKernelBase) {
+   const expected = libKernelBase.add32(OFFSET_lk_worker_wait_return);
+   let lastCount = 0;
++  let hit, count, candidate, value;
+ 
+   for (let attempt = 0; attempt < 50; attempt++) {
+-    let hit = null;
+-    let count = 0;
++    hit = null;
++    count = 0;
+     for (let offset = 0x7f000; offset < 0x80000; offset += 0x8) {
+-      const candidate = stack.add32(offset);
+-      const value = p.read8(candidate);
++      candidate = stack.add32(offset);
++      value = p.read8(candidate);
+       if (value.low !== expected.low || value.hi !== expected.hi) continue;
+ 
+       hit = candidate;
+@@ -105,8 +113,9 @@ async function prepareRop(p) {
+   const ctor = globalThis.__ps5NativeCtor;
+   let webkitBase;
+   if (typeof ctor === "number" && typeof OFFSET_wk_host_constructor_candidates !== "undefined") {
+-    for (const offset of OFFSET_wk_host_constructor_candidates) {
+-      const candidate = ctor - offset;
++    let candidate;
++    for (let index = 0; index < OFFSET_wk_host_constructor_candidates.length; index++) {
++      candidate = ctor - OFFSET_wk_host_constructor_candidates[index];
+       if (candidate >= 0x800000000 && candidate < 0x900000000 && candidate % 0x4000 === 0) {
+         webkitBase = candidate;
+         break;
+@@ -165,9 +174,10 @@ async function prepareRop(p) {
+ 
+   function writestr(addr, str) {
+     let waddr = addr.add32(0);
++    let byte;
+     if (typeof str == "string") {
+       for (let i = 0; i < str.length; i++) {
+-        let byte = str.charCodeAt(i);
++        byte = str.charCodeAt(i);
+         if (byte == 0) {
+           break;
+         }
+@@ -271,6 +281,20 @@ async function prepareRop(p) {
+   return { p: runtime, chain };
+ }
+ 
++// WKAL: the autoloader iframe URL appends ?autoload=<name>
++// (relapse/index.html?autoload=payload.elf&v=1). When set, the named payload
++// is fetched from the shared payloads dir (/app/<version>/payloads/, one
++// level up from this page), pushed through the freshly booted elfldr and the
++// result is reported to the parent page. Without it the standalone R2 flow
++// is unchanged.
++const AUTOLOAD = new URLSearchParams(location.search).get("autoload") || "";
++
++function postAutoloadResult(message) {
++  try {
++    window.parent.postMessage(message, "*");
++  } catch (error) { }
++}
++
+ async function main(userlandRW) {
+   const { p, chain } = await prepareRop(userlandRW);
+   const { runKernelExploit } = await import("./relapse_exploit.js");
+@@ -281,6 +305,33 @@ async function main(userlandRW) {
+   if (result.payloads) {
+     log("kernel exploit complete", "info");
+     log("elfldr is listening on port 9021", "info");
++    if (window.markSuccess) window.markSuccess();
++    if (AUTOLOAD) {
++      log("autoloading " + AUTOLOAD + " -- waiting for the ELF loader on port 9021", "info");
++      const { loadAutoloadPayload } = await import("./kexp.js");
++      let bytes = null;
++      let why = "";
++      for (let attempt = 0; attempt < 2 && bytes === null; attempt++) {
++        try {
++          bytes = await loadAutoloadPayload(p, chain, AUTOLOAD,
++            (message) => log(message, "info"));
++        } catch (error) {
++          why = error instanceof Error ? error.message : String(error);
++          if (attempt === 0) {
++            log("autoload attempt failed: " + why + " - retrying the send", "info");
++            await new Promise((resolve) => setTimeout(resolve, 800));
++          }
++        }
++      }
++      if (bytes !== null) {
++        log("autoloaded " + AUTOLOAD + " (" + bytes + " bytes)", "success");
++        postAutoloadResult({ type: "wkal", kind: "autoload", ok: true, bytes });
++      } else {
++        log("autoload failed: " + why, "error");
++        postAutoloadResult({ type: "wkal", kind: "autoload", ok: false, why });
++      }
++      return;
++    }
+     watchR2(async () => {
+       try {
+         const { loadOptionalPayloads } = await import("./kexp.js");
+@@ -290,11 +341,27 @@ async function main(userlandRW) {
+       }
+     });
+   } else {
+-    log("kernel chain complete: root and sandbox escape are active", "info");
++    log("kernel chain stopped before elfldr was up", "error");
++    if (window.scheduleRetry) {
++      window.scheduleRetry("kernel chain stopped before elfldr");
++    } else if (AUTOLOAD) {
++      postAutoloadResult({ type: "wkal", kind: "autoload", ok: false,
++        why: "kernel chain finished without elfldr" });
++    }
+   }
+ }
+ 
+ const fwScript = document.createElement("script");
+ document.body.appendChild(fwScript);
+ 
+-fwScript.setAttribute("src", `offsets/${window.fw_str}.js?v=` + Date.now());
+\ No newline at end of file
++// The chain must not start before the firmware offsets script has executed.
++// __offsetsReady resolves on load OR error - on error the chain fails with
++// its own message and the auto-retry reload takes over.
++window.__offsetsReady = new Promise((resolve) => {
++  fwScript.onload = () => resolve();
++  fwScript.onerror = () => resolve();
++});
++
++// WKAL: plain relative path (no dynamic cache-buster) so the AppCache
++// manifest entry for this exact URL serves the offsets offline.
++fwScript.setAttribute("src", `offsets/${window.fw_str}.js`);
+\ No newline at end of file
+diff --git a/src/site.js b/src/site.js
+index aa9ca043964fa7fa30d31dc5acf5218469833b15..6d3295aa9c72ea7c86badf9cba3474a4c9234871 100644
+--- a/src/site.js
++++ b/src/site.js
+@@ -3,6 +3,22 @@ import { installWindowP } from "./utils/mem.js";
+ 
+ const output = document.getElementById("console");
+ 
++// Batch scroll writes to one per frame and keep the log DOM bounded so the
++// page stays responsive while the chain hammers the same process.
++const LOG_LIMIT = 400;
++let scrollQueued = false;
++
++function queueConsoleScroll() {
++  if (scrollQueued) return;
++  scrollQueued = true;
++  const flush = () => {
++    scrollQueued = false;
++    output.scrollTop = output.scrollHeight;
++  };
++  if (typeof requestAnimationFrame === "function") requestAnimationFrame(flush);
++  else setTimeout(flush, 16);
++}
++
+ function writeLog(message, type = "log", replace = false) {
+   let line = replace ? output.lastElementChild : null;
+   if (!line) {
+@@ -13,7 +29,9 @@ function writeLog(message, type = "log", replace = false) {
+   if (type === "error") marker = "-";
+   if (type === "info" || type === "success") marker = "+";
+   line.textContent = `[${marker}] ${message}`;
+-  output.scrollTop = output.scrollHeight;
++  while (output.childElementCount > LOG_LIMIT)
++    output.removeChild(output.firstElementChild);
++  queueConsoleScroll();
+ }
+ 
+ function writeEvent(name, detail, type) {
+@@ -24,6 +42,70 @@ function writeEvent(name, detail, type) {
+ window.writeLog = writeLog;
+ window.jb = { mark: writeEvent };
+ 
++/* ----- auto-retry: the chain is probabilistic, so a failed attempt reloads
++   the page and starts over (up to MAX_RETRIES per session) until elfldr is
++   up. This is what turns "needs several tries" into a hands-off flow. ----- */
++const RETRY_KEY = "wkal_retry";
++const MAX_RETRIES = 12;
++let retryScheduled = false;
++
++function priorAttempts() {
++  try { return parseInt(sessionStorage.getItem(RETRY_KEY) || "0", 10) || 0; } catch (e) { return 0; }
++}
++
++function markSuccess() {
++  window.__wkalDone = true;
++  try { sessionStorage.removeItem(RETRY_KEY); } catch (e) {}
++}
++window.markSuccess = markSuccess;
++
++// WKAL: report chain-level failures to the autoloader parent page too -
++// only when armed with ?autoload=, so standalone runs stay silent.
++function notifyParent(data) {
++  try {
++    if (!new URLSearchParams(location.search).get("autoload")) return;
++    window.parent.postMessage(data, "*");
++  } catch (e) { }
++}
++
++function scheduleRetry(reason) {
++  if (window.__wkalDone || retryScheduled) return;
++  if (window.firmware && window.firmware.rejection()) {
++    notifyParent({ type: "wkal", kind: "autoload", ok: false, why: reason });
++    return;
++  }
++
++  let count = priorAttempts();
++  if (count >= MAX_RETRIES) {
++    try { sessionStorage.removeItem(RETRY_KEY); } catch (e) {}
++    writeLog("retry limit reached (" + MAX_RETRIES + ") - reload the page to try again", "error");
++    notifyParent({ type: "wkal", kind: "autoload", ok: false,
++      why: "retry limit reached: " + reason });
++    return;
++  }
++
++  retryScheduled = true;
++  count += 1;
++  try { sessionStorage.setItem(RETRY_KEY, String(count)); } catch (e) {}
++
++  const delay = 3000 + Math.floor(Math.random() * 2500);
++  writeLog("attempt " + count + "/" + MAX_RETRIES + " failed (" + reason + ") - retrying automatically...", "info");
++  if (count === 3 || count === 6 || count === 10)
++    writeLog("tip: if it keeps failing, reboot the console and try again - a fresh boot has the best odds", "info");
++  notifyParent({ type: "wkal", kind: "autoload", ok: false, retry: true,
++    attempt: count, total: MAX_RETRIES, why: reason });
++  setTimeout(() => location.reload(), delay);
++}
++window.scheduleRetry = scheduleRetry;
++
++// Stray async failures feed the same retry loop instead of dying silently.
++window.addEventListener("unhandledrejection", (event) => {
++  const reason = event && event.reason;
++  const message = reason instanceof Error ? reason.message : String(reason);
++  writeLog("unhandled rejection: " + message, "error");
++  scheduleRetry(message);
++});
++
+ async function getPrimitive() {
+   writeLog("Starting WebKit exploit");
+   const primitive = installWindowP(await establishPrimitive(writeEvent));
+@@ -53,9 +135,19 @@ async function run() {
+   const rejection = window.firmware.rejection();
+   if (rejection)
+     throw new Error(rejection);
++
++  const attempts = priorAttempts();
++  if (attempts > 0)
++    writeLog("auto-retry: attempt " + (attempts + 1) + " of " + (MAX_RETRIES + 1) + " for this session", "info");
++
+   writeLog("Credits: ntfargo, ufm42, Sonic_Iso, Jordy, Dr. Yenyen, TheFlow, SlidyBat, Flatz, cow, nhk, bollarz, Sleirsgoevy, EchoStretch, EarthOnion", "info");
+   writeLog(`Agent: ${navigator.userAgent}`, "info");
+   writeLog(`Firmware: ${window.fw_str}`, "info");
++
++  // Never start the chain before the firmware offsets script has executed -
++  // removes a first-load race on slow connections.
++  if (window.__offsetsReady) await window.__offsetsReady;
++
+   const primitive = await getPrimitive();
+   writeLog(`WebKit base: 0x${getWebKitBase().toString(16)}`, "info");
+ 
+@@ -63,4 +155,8 @@ async function run() {
+   await main(primitive);
+ }
+ 
+-run().catch((error) => writeLog(error instanceof Error ? error.message : String(error), "error"));
+\ No newline at end of file
++run().catch((error) => {
++  const message = error instanceof Error ? error.message : String(error);
++  writeLog(message, "error");
++  scheduleRetry(message);
++});
+\ No newline at end of file

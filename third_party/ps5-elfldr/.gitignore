@@ -1,0 +1,6 @@
+*~
+*.o
+*.elf
+socksrv_elf.c
+bootstrap_elf.c
+

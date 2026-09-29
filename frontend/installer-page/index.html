@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en" manifest="/cache.appcache">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <title>PSVietHoa AutoLoader Installer v[[VERSION_PLACEHOLDER]] (based on ps5-webkit-autoloader by PLK; built [[BUILD_TIME_PLACEHOLDER]])</title>
+  <style>
+    * { margin: 0; padding: 0; -webkit-box-sizing: border-box; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background: #05070e;
+      background: -webkit-linear-gradient(180deg, #05070e 0%, #0a101f 100%);
+      background: linear-gradient(180deg, #05070e 0%, #0a101f 100%);
+      color: #eaf0ff;
+      display: -webkit-box; display: -webkit-flex; display: flex;
+      -webkit-box-align: center; -webkit-align-items: center; align-items: center;
+      -webkit-box-pack: center; -webkit-justify-content: center; justify-content: center;
+      min-height: 100%; text-align: center;
+    }
+    main { max-width: 42rem; padding: 2rem; }
+    .logo { display: inline-block; width: 7.5rem; height: 7.5rem; margin-bottom: 1.6rem; }
+    h1 { font-size: 1.9rem; font-weight: 700; letter-spacing: 0.03em; margin-bottom: 0.9rem; color: #fff; }
+    h1 .accent { color: #6c86ff; }
+    p { font-size: 1.05rem; line-height: 1.6; color: #98a6c8; }
+    #status { font-size: 1.35rem; font-weight: 600; color: #7c93ff; margin-bottom: 0.45rem; }
+    #progressWrap { position: relative; width: 100%; max-width: 30rem; height: 1.1rem;
+      margin: 1.6rem auto 0; background: rgba(84, 110, 255, 0.12);
+      border: 1px solid rgba(84, 110, 255, 0.16); border-radius: 999px; overflow: hidden; }
+    #progressBar { position: absolute; top: 0; left: 0; height: 100%; width: 100%;
+      background: -webkit-linear-gradient(90deg, #2233cc 0%, #3d5afe 55%, #6c86ff 100%);
+      background: linear-gradient(90deg, #2233cc 0%, #3d5afe 55%, #6c86ff 100%);
+      -webkit-transform: scaleX(0); transform: scaleX(0);
+      -webkit-transform-origin: left center; transform-origin: left center;
+      -webkit-transition: -webkit-transform 0.3s ease-out; transition: transform 0.3s ease-out; }
+    #progressPct { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      display: -webkit-box; display: -webkit-flex; display: flex;
+      -webkit-box-align: center; -webkit-align-items: center; align-items: center;
+      -webkit-box-pack: center; -webkit-justify-content: center; justify-content: center;
+      color: #fff; font-size: 0.72rem; font-weight: 600;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); z-index: 1; pointer-events: none; }
+    #logContainer { margin-top: 1rem; width: 100%; max-width: 40rem; height: 11rem;
+      background: #04060b; border: 1px solid rgba(84, 110, 255, 0.16); border-radius: 12px;
+      overflow-y: auto; text-align: left;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Courier New", monospace;
+      font-size: 0.75rem; padding: 0.6rem; color: #a9b8e8;
+      white-space: pre-wrap; word-wrap: break-word; }
+    #logContainer.error { color: #ff7a7a; }
+    #footer { position: fixed; bottom: 12px; left: 50%;
+      -webkit-transform: translateX(-50%); transform: translateX(-50%);
+      font-size: 0.68rem; color: #4e5a7e; line-height: 1.5; text-align: center;
+      z-index: 20; pointer-events: none; }
+    #cacheCorruptOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(4, 6, 12, 0.88);
+      display: -webkit-box; display: -webkit-flex; display: flex;
+      -webkit-box-align: center; -webkit-align-items: center; align-items: center;
+      -webkit-box-pack: center; -webkit-justify-content: center; justify-content: center;
+      z-index: 100; }
+    #cacheCorruptOverlay .card { background: #0a0f1d; border: 1px solid rgba(84, 110, 255, 0.2);
+      border-radius: 14px; max-width: 34rem; padding: 2rem; text-align: center; }
+    #cacheCorruptOverlay h2 { font-size: 1.4rem; font-weight: 700; color: #ffc966; margin-bottom: 1rem; }
+    #cacheCorruptOverlay p { font-size: 1rem; line-height: 1.65; color: #b9c6e6; margin-bottom: 1.4rem; }
+    #cacheCorruptOverlay .actions { display: -webkit-box; display: -webkit-flex; display: flex;
+      -webkit-box-pack: center; -webkit-justify-content: center; justify-content: center; gap: 1rem; }
+    #cacheCorruptOverlay .actions[hidden] { display: none !important; }
+    #cacheCorruptOverlay .btn { font-size: 1rem; font-weight: 600; padding: 0.7rem 1.4rem;
+      border-radius: 10px; border: none; cursor: pointer; color: #fff; }
+    #cacheCorruptOverlay .btn.primary {
+      background: -webkit-linear-gradient(90deg, #2233cc 0%, #3d5afe 100%);
+      background: linear-gradient(90deg, #2233cc 0%, #3d5afe 100%); }
+    #cacheCorruptOverlay .btn.secondary { background: rgba(84, 110, 255, 0.14); color: #dbe4ff; }
+  </style>
+
+</head>
+
+<body>
+  <main>
+    <img class="logo" src="/logo.svg" alt="PSVietHoa AutoLoader" />
+    <h1>PSVietHoa <span class="accent">AutoLoader</span> Installer</h1>
+    <p id="status">Loading&hellip;</p>
+    <p id="detail"></p>
+
+    <div id="progressWrap" hidden>
+      <div id="progressBar"></div>
+      <div id="progressPct">0%</div>
+    </div>
+    <div id="logContainer" hidden></div>
+
+  </main>
+
+  <footer id="footer">PSVietHoa AutoLoader Installer v[[VERSION_PLACEHOLDER]] (built [[BUILD_TIME_PLACEHOLDER]])<br />Based on ps5-webkit-autoloader by itsPLK — free &amp; open source (GPL-3.0)</footer>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var statusEl = document.getElementById('status');
+      var detailEl = document.getElementById('detail');
+      var progressWrap = document.getElementById('progressWrap');
+      var progressBar = document.getElementById('progressBar');
+      var progressPct = document.getElementById('progressPct');
+      var completed = false;
+      var isDownloading = false;
+      var isRetry = false;
+      var currentUid = '';
+      var simulateCorrupt = false;
+      var corruptionPromptShown = false;
+
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        isRetry = params.get('retry') === '1';
+        currentUid = params.get('uid') || '';
+        /* Test hook: ?simulate=corrupt forces the corruption prompt without
+         * needing a real AppCache error (e.g. for quick UI testing in a
+         * desktop browser via `make dev`). */
+        simulateCorrupt = params.get('simulate') === 'corrupt';
+      })();
+
+      var logContainer = document.getElementById('logContainer');
+      var seenLogs = "";
+
+      function appendLog(msg) {
+        logContainer.hidden = false;
+        var div = document.createElement('div');
+        div.textContent = msg;
+        logContainer.appendChild(div);
+        logContainer.scrollTop = logContainer.scrollHeight;
+      }
+
+
+      var logPos = 0;
+      var logXhr = null;
+
+      function pollLogs() {
+        logXhr = new XMLHttpRequest();
+        logXhr.open('GET', '/logs?pos=' + logPos, true);
+        logXhr.onreadystatechange = function () {
+          if (logXhr.readyState === 4) {
+            if (logXhr.status === 200) {
+              var newLogs = logXhr.responseText;
+              if (newLogs.length > 0) {
+                var lines = newLogs.split('\\n');
+                for (var i = 0; i < lines.length; i++) {
+                  if (lines[i].trim() !== '') appendLog(lines[i]);
+                }
+              }
+              var newPosStr = logXhr.getResponseHeader("X-Log-Pos");
+              if (newPosStr) {
+                logPos = parseInt(newPosStr, 10);
+              }
+              // Add a slight delay before reconnecting to reduce server load
+              setTimeout(pollLogs, 100);
+            } else {
+              // Server is down or error
+              if (completed) return; // Stop polling completely if we finished
+              setTimeout(pollLogs, 1000);
+            }
+          }
+        };
+        logXhr.send();
+      }
+      // Start the long-polling loop
+      pollLogs();
+
+
+      var probeOk = false;
+
+
+      var AUTOLOADER_URL = '/app/index.html';
+
+      function setProgress(pct) {
+        progressBar.style.transform = 'scaleX(' + pct / 100 + ')';
+        progressPct.textContent = pct + '%';
+      }
+
+      function setInstalled() {
+        statusEl.textContent = 'Installed successfully';
+        statusEl.style.color = '#22c55e';
+        progressBar.style.background = '-webkit-linear-gradient(90deg, #16a34a 0%, #22c55e 100%)';
+        detailEl.textContent = 'The PSVietHoa AutoLoader shortcut is now on your PS5 homescreen. You can close this page.';
+        setProgress(100);
+      }
+
+      function setFailed() {
+        statusEl.textContent = 'Install failed';
+        statusEl.style.color = '#ef4444';
+        progressBar.style.background = '-webkit-linear-gradient(90deg, #dc2626 0%, #ef4444 100%)';
+        detailEl.textContent = 'The app could not be installed. Close this page and re-run the installer.';
+      }
+
+      function setSlow() {
+        statusEl.textContent = 'Caching is taking unusually long';
+        detailEl.textContent = 'The shortcut is only created after the cache finishes. If this never completes, close the browser and re-run the installer.';
+      }
+
+      function setCaching() {
+        statusEl.textContent = 'Caching content...';
+        detailEl.textContent = 'Please wait a moment. Do not close this page yet!';
+        progressWrap.hidden = false;
+      }
+
+      function goToAutoloader() {
+        window.location.replace(AUTOLOADER_URL);
+      }
+
+      function probeServer() {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '/version', true);
+        xhr.timeout = 1000;
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState === 4) {
+            if (xhr.status === 200) {
+              var hdrUid = xhr.getResponseHeader("X-User-Id");
+              if (hdrUid) currentUid = hdrUid;
+              probeOk = true;
+              setCaching();
+            } else {
+              goToAutoloader();
+            }
+          }
+        };
+        xhr.onerror = function () {
+          goToAutoloader();
+        };
+        xhr.ontimeout = function () {
+          goToAutoloader();
+        };
+        xhr.send();
+      }
+
+      function installApp() {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '/install', true);
+        xhr.timeout = 30000;
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState === 4) {
+            if (xhr.status === 200) {
+              setInstalled();
+            } else {
+              setFailed();
+            }
+          }
+        };
+        xhr.onerror = function () {
+          setFailed();
+        };
+        xhr.ontimeout = function () {
+          setFailed();
+        };
+        xhr.send();
+      }
+
+      function maybeInstall() {
+        if (completed) {
+          return;
+        }
+        completed = true;
+        installApp();
+      }
+
+      function setCacheCorrupted() {
+        if (corruptionPromptShown) {
+          return;
+        }
+        corruptionPromptShown = true;
+        completed = true;
+        progressWrap.hidden = true;
+        logContainer.hidden = true;
+        statusEl.textContent = 'Caching failed';
+        detailEl.textContent = '';
+
+        var overlay = document.createElement('div');
+        overlay.id = 'cacheCorruptOverlay';
+
+        var card = document.createElement('div');
+        card.className = 'card';
+
+        var title = document.createElement('h2');
+        var msg = document.createElement('p');
+        var actions = null;
+
+        var webkitShellPath = '/user/home/' + (currentUid || '<userid>') + '/webkit/shell/';
+
+        if (isRetry) {
+          title.textContent = 'Cache issue persists';
+          msg.textContent = 'Clearing WebKit data from ' + webkitShellPath + ' didn\'t seem to fix the issue. You can close this page.';
+          var exitXhr = new XMLHttpRequest();
+          exitXhr.open('GET', '/exit', true);
+          exitXhr.send();
+        } else {
+          title.textContent = 'WebKit cache appears corrupted';
+          msg.textContent = 'Your PS5\'s WebKit browser data may be corrupted, preventing the cache from completing. Clearing it may fix the issue. ';
+          var strong = document.createElement('strong');
+          strong.textContent = 'This will remove all browser data in ' + webkitShellPath + ' (AppCache, cookies, local storage) for the current user.';
+          msg.appendChild(strong);
+
+          actions = document.createElement('div');
+          actions.className = 'actions';
+
+          var clearBtn = document.createElement('button');
+          clearBtn.className = 'btn primary';
+          clearBtn.textContent = 'Clear WebKit Data & Retry';
+          clearBtn.addEventListener('click', function () {
+            actions.hidden = true;
+            actions.style.display = 'none';
+            msg.textContent = 'Clearing data and restarting browser...';
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', '/clear-webkit-data', true);
+            xhr.timeout = 30000;
+            xhr.onreadystatechange = function () {
+              if (xhr.readyState === 4 && xhr.status !== 200) {
+                msg.textContent = 'Failed to clear WebKit data';
+                actions.hidden = false;
+                actions.style.display = '';
+              }
+            };
+            xhr.onerror = function () {
+              msg.textContent = 'Failed to clear WebKit data';
+              actions.hidden = false;
+              actions.style.display = '';
+            };
+            xhr.ontimeout = function () {
+              msg.textContent = 'Failed to clear WebKit data';
+              actions.hidden = false;
+              actions.style.display = '';
+            };
+            xhr.send();
+          });
+          actions.appendChild(clearBtn);
+
+          var cancelBtn = document.createElement('button');
+          cancelBtn.className = 'btn secondary';
+          cancelBtn.textContent = 'Cancel';
+          cancelBtn.addEventListener('click', function () {
+            msg.textContent = 'You can close this page. Re-run the installer ELF to try again.';
+            actions.hidden = true;
+            actions.style.display = 'none';
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', '/exit', true);
+            xhr.send();
+          });
+          actions.appendChild(cancelBtn);
+        }
+
+        card.appendChild(title);
+        card.appendChild(msg);
+        if (actions) {
+          card.appendChild(actions);
+        }
+        overlay.appendChild(card);
+        document.body.appendChild(overlay);
+      }
+
+      window.addEventListener('load', function () {
+        /* Test hook: ?simulate=corrupt forces the corruption prompt as if an
+         * AppCache error fired during download, and skips the probe/install
+         * polling so the prompt stays up for UI testing (e.g. make dev). */
+        if (simulateCorrupt) {
+          isDownloading = true;
+          setCacheCorrupted();
+          return;
+        }
+
+        probeServer();
+
+        /* The shortcut is created only once the AppCache is current, so the
+           installer never installs a partial cache. /install then both installs
+           the homescreen app and stops the server. */
+        var waitTimer = setInterval(function () {
+          if (completed) {
+            clearInterval(waitTimer);
+            return;
+          }
+          if (!probeOk) {
+            clearInterval(waitTimer);
+            goToAutoloader();
+            return;
+          }
+          var st = window.applicationCache
+              ? window.applicationCache.status : -1;
+          if (st === -1 || st === window.applicationCache.IDLE) {
+            clearInterval(waitTimer);
+            maybeInstall();
+          }
+        }, 1000);
+
+        /* Safety cap — never leave the installer hanging on screen. It does NOT
+           install or exit: a partial cache must never create a shortcut, so the
+           user simply re-runs the installer if this never completes. */
+        setTimeout(function () {
+          if (!completed && probeOk) {
+            setSlow();
+          }
+        }, 120000);
+      });
+
+
+      if (window.applicationCache) {
+        window.applicationCache.addEventListener('checking', function () {
+          progressWrap.hidden = false;
+          appendLog("[AppCache] Checking for manifest...");
+        });
+        window.applicationCache.addEventListener('downloading', function () {
+          isDownloading = true;
+          appendLog("[AppCache] Downloading cache...");
+        });
+        window.applicationCache.addEventListener('progress', function (e) {
+          if (e.url) appendLog("[AppCache] Fetching: " + e.url);
+          if (e.total && e.total > 0) {
+            var pct = Math.min(99, Math.round((e.loaded / e.total) * 100));
+            setProgress(pct);
+          }
+        });
+        window.applicationCache.addEventListener('error', function (e) {
+          appendLog("[AppCache] Error occurred! Status: " + window.applicationCache.status);
+          logContainer.className = 'error';
+          if (isDownloading) {
+            setCacheCorrupted();
+          }
+        });
+        window.applicationCache.addEventListener('obsolete', function (e) {
+          appendLog("[AppCache] Manifest is obsolete.");
+        });
+        window.applicationCache.addEventListener('cached', function() {
+          isDownloading = false;
+          appendLog("[AppCache] Caching complete.");
+          maybeInstall();
+        });
+        window.applicationCache.addEventListener('noupdate', function() {
+          isDownloading = false;
+          appendLog("[AppCache] No update needed.");
+          maybeInstall();
+        });
+        window.applicationCache.addEventListener('updateready', function () {
+          isDownloading = false;
+          if (window.applicationCache.status === window.applicationCache.UPDATEREADY) {
+            window.applicationCache.swapCache();
+            window.location.reload();
+          }
+        });
+      }
+    })();
+  </script>
+</body>
+
+</html>
